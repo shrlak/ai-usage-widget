@@ -3,10 +3,26 @@
 'use strict';
 const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, globalShortcut, dialog, net, shell } = require('electron');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
-const { createCollector } = require('./collector');
+const { createCollector, DATA_DIR } = require('./collector');
 const claudeLink = require('./claude-link');
 const { ClaudeApi } = require('./claude-api');
+
+// ───────── 기록 (창이 안 뜰 때 원인을 찾으려고) ─────────
+const LOG = path.join(DATA_DIR, 'widget.log');
+function log(...a) {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+    fs.appendFileSync(LOG, `${new Date().toISOString()} ${a.map(x => typeof x === 'string' ? x : JSON.stringify(x)).join(' ')}\n`);
+  } catch { }
+}
+try { if (fs.statSync(LOG).size > 256 * 1024) fs.unlinkSync(LOG); } catch { }
+let crashShown = false;
+process.on('uncaughtException', (e) => {
+  log('ERROR', String(e && e.stack || e));
+  if (!crashShown) { crashShown = true; try { dialog.showErrorBox('AI 사용량 위젯 오류', `${e && e.message || e}\n\n기록: ${LOG}`); } catch { } }
+});
 
 const WIDTH = 300;
 const SHORTCUT = 'CommandOrControl+Alt+U';
@@ -32,13 +48,17 @@ function onSomeScreen(x, y) { // 모니터를 뺐을 때 화면 밖에 숨어 �
 
 function applyOnTop() {
   if (!win) return;
-  if (prefs.onTop) {
-    win.setAlwaysOnTop(true, 'screen-saver'); // 전체 화면 앱보다도 위
-    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  } else {
-    win.setAlwaysOnTop(false);
-    win.setVisibleOnAllWorkspaces(false);
-  }
+  win.setAlwaysOnTop(!!prefs.onTop, 'screen-saver'); // 전체 화면 앱보다도 위
+  // Mac: 모든 데스크톱 · 전체 화면 공간에도 보이게. 앱 종류를 바꾸면(TransformProcessType) 창이 숨어 버릴 수 있어서 건너뜀
+  if (process.platform !== 'win32') win.setVisibleOnAllWorkspaces(!!prefs.onTop, { visibleOnFullScreen: true, skipTransformProcessType: true });
+}
+let shown = false;
+function showFirst() {
+  if (!win || shown) return;
+  shown = true;
+  if (process.platform === 'darwin') win.show(); else win.showInactive(); // 뜰 때 다른 앱의 입력을 뺏지 않음 (Mac 은 Dock 없는 앱이라 show 로 확실히)
+  applyOnTop();
+  log('shown', win.getBounds(), 'visible', win.isVisible());
 }
 
 function createWindow() {
@@ -53,12 +73,15 @@ function createWindow() {
   applyOnTop();
   win.setOpacity(prefs.opacity);
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
-  win.once('ready-to-show', () => { win.showInactive(); push(); }); // 뜰 때 다른 앱의 입력을 뺏지 않음
+  win.once('ready-to-show', () => { log('ready-to-show'); showFirst(); push(); });
+  setTimeout(showFirst, 3000); // ready-to-show 가 안 오는 환경에서도 반드시 뜨게
+  win.webContents.on('did-fail-load', (_e, code, desc) => log('did-fail-load', code, desc));
+  win.webContents.on('render-process-gone', (_e, d) => { log('render-process-gone', d); if (win) win.reload(); });
   win.on('move', () => {
     clearTimeout(moveTimer);
     moveTimer = setTimeout(() => { if (!win) return; const [x, y] = win.getPosition(); prefs.x = x; prefs.y = y; savePrefs(); }, 400);
   });
-  win.on('blur', () => { if (prefs.onTop) applyOnTop(); }); // 다른 '항상 위' 창에 밀리지 않게 다시 올림
+  if (process.platform === 'win32') win.on('blur', () => { if (prefs.onTop) win.setAlwaysOnTop(true, 'screen-saver'); }); // 다른 '항상 위' 창에 밀리지 않게 다시 올림
   win.on('closed', () => { win = null; });
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', (e) => e.preventDefault());
@@ -213,9 +236,11 @@ ipcMain.on('action', (_e, name) => {
 // ───────── 시작 ─────────
 if (!app.requestSingleInstanceLock()) app.quit();
 else {
-  app.on('second-instance', () => { if (!win) createWindow(); else { win.showInactive(); applyOnTop(); } });
+  app.on('second-instance', () => { log('second-instance'); if (!win) createWindow(); else { win.show(); applyOnTop(); } }); // 앱을 다시 누르면 확실히 보이게
   app.whenReady().then(() => {
-    if (process.platform === 'darwin' && app.dock) app.dock.hide(); // Dock 아이콘 없이, 전체 화면 위에도 뜨게
+    log('start', app.getVersion(), process.platform, process.arch, os.release(), app.isPackaged ? 'packaged' : 'dev', screen.getAllDisplays().map(d => d.workArea));
+    // 설치한 앱은 Info.plist(LSUIElement)로 Dock 아이콘이 없음. 개발 모드에서만 직접 숨김
+    if (process.platform === 'darwin' && !app.isPackaged && app.dock) app.dock.hide();
     loadPrefs();
     claudeApi.enabled = prefs.claudeApi;
     if (app.isPackaged && !prefs.loginSet) { // 설치한 앱을 처음 켜면 로그인할 때 자동으로 뜨게 (메뉴에서 끌 수 있음)

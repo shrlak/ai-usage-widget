@@ -40,7 +40,7 @@ function limitRows(lim, now) {
     const sub = w.reset ? '초기화됨' : fmtReset(w.resetsAt, now);
     return `<div class="limit">
       <span class="lab">${esc(w.label)}</span>
-      <div class="track"><div class="fill ${level(r)}" style="width:${r}%"></div></div>
+      <div class="track"><div class="fill ${level(r)}" data-w="${r}"></div></div>
       <span class="val">${r}%</span>
       ${sub ? `<span class="sub">${esc(sub)}</span>` : ''}
     </div>`;
@@ -121,6 +121,8 @@ function render(s) {
     $('claude').innerHTML = agentBlock('Claude', s.claude, s.now, claudeExtra(s.claude));
     $('codex').innerHTML = agentBlock('Codex', s.codex, s.now);
     $('sessions').innerHTML = s.prefs.showSessions ? sessionRows(s.sessions, s.now) : '';
+    // CSP 가 style="" 속성을 막아서 막대 길이는 여기서 직접 넣음
+    for (const el of document.querySelectorAll('[data-w]')) el.style.width = el.dataset.w + '%';
   }
 }
 

@@ -1,7 +1,7 @@
 {
   "name": "ai-usage-widget",
   "productName": "AI 사용량",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Claude Code 와 Codex 의 남은 한도·오늘 토큰·실행 중인 세션을 화면 맨 위에 띄워 두는 작은 위젯",
   "main": "main.js",
   "license": "MIT",
