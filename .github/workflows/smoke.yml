@@ -1,0 +1,56 @@
+# 실제 Mac 에서 Release 의 dmg 를 사용자와 똑같이 설치 · 실행해 보는 점검
+name: Mac smoke test
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/smoke.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: macos-latest
+    steps:
+      - name: Download released dmg
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName)
+          echo "release $TAG"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*mac-arm64.dmg' --dir rel
+      - name: Install like a user
+        run: |
+          hdiutil attach rel/*.dmg -nobrowse -mountpoint /tmp/dmg
+          ls -la /tmp/dmg
+          ditto /tmp/dmg/*.app "/Applications/AI 사용량.app"
+          hdiutil detach /tmp/dmg
+          APP="/Applications/AI 사용량.app"
+          xattr -w com.apple.quarantine "0083;$(printf %x $(date +%s));Safari;" "$APP"
+          echo "--- spctl (quarantined)"; spctl --assess -vv --type execute "$APP" 2>&1 || true
+          echo "--- codesign verify"; codesign --verify --deep --strict -vv "$APP" 2>&1 || true
+          echo "--- Info.plist"; plutil -p "$APP/Contents/Info.plist" | grep -E "CFBundleExecutable|LSUIElement|LSMinimumSystemVersion|CFBundleIdentifier"
+      - name: Remove quarantine and launch
+        run: |
+          APP="/Applications/AI 사용량.app"
+          xattr -dr com.apple.quarantine "$APP"
+          open "$APP"; sleep 25
+          echo "--- process"; pgrep -fl "AI 사용량" || echo "NOT RUNNING"
+          echo "--- widget.log"; cat ~/.ai-usage-widget/widget.log || echo "no widget.log"
+          screencapture -x screen-open.png || true
+          pkill -f "AI 사용량" || true; sleep 3
+          echo "--- direct run"
+          "$APP/Contents/MacOS/AI 사용량" > run.log 2>&1 & sleep 20
+          pgrep -fl "AI 사용량" || echo "NOT RUNNING (direct)"
+          grep -vE "^\s*$" run.log | tail -40
+          echo "--- crash reports"; ls -t ~/Library/Logs/DiagnosticReports 2>/dev/null | head -5
+          for f in $(ls -t ~/Library/Logs/DiagnosticReports/*.ips 2>/dev/null | head -1); do head -c 3000 "$f"; done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke
+          path: |
+            screen-open.png
+            run.log
