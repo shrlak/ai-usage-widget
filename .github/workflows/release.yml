@@ -1,11 +1,11 @@
 # package.json 의 version 을 올려서 main 에 푸시하면 Mac(.dmg) · Windows(.exe) 설치 파일을 만들어
-# GitHub Releases 의 v<version> 에 올림 (Release 와 태그는 electron-builder 가 만듦)
+# GitHub Releases 의 v<version> 에 올림. 같은 버전으로 다시 돌면 파일을 새로 덮어씀
 name: Release
 
 on:
   push:
     branches: [main]
-    paths: ['package.json']
+    paths: ['package.json', '.github/workflows/release.yml']
     tags: ['v*']
   workflow_dispatch:
 
@@ -17,10 +17,27 @@ permissions:
   contents: write
 
 jobs:
+  # Release 를 먼저 한 번만 만들어 둠 (빌드 여러 개가 동시에 만들다 부딪히지 않게)
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create release if missing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v$(node -p "require('./package.json').version")"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "$TAG already exists"
+          else
+            gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" \
+              --notes "설치 파일: Mac 은 .dmg (Apple 칩은 arm64, Intel 은 x64), Windows 는 .exe"
+          fi
+
   build:
+    needs: release
     strategy:
       fail-fast: false
-      max-parallel: 1 # 둘이 동시에 Release 를 만들다 부딪히지 않게 차례로
       matrix:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
