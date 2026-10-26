@@ -46,11 +46,36 @@ jobs:
           pgrep -fl "AI 사용량" || echo "NOT RUNNING (direct)"
           grep -vE "^\s*$" run.log | tail -40
           echo "--- crash reports"; ls -t ~/Library/Logs/DiagnosticReports 2>/dev/null | head -5
-          for f in $(ls -t ~/Library/Logs/DiagnosticReports/*.ips 2>/dev/null | head -1); do head -c 3000 "$f"; done
+          f=$(ls -t ~/Library/Logs/DiagnosticReports/*.ips 2>/dev/null | head -1)
+          [ -n "$f" ] && python3 -c 'import json,sys; t=open(sys.argv[1]).read().split("\n",1)[1]; j=json.loads(t); print(json.dumps({k:j.get(k) for k in ("exception","termination","asi","crashed","faultingThread","procPath")},ensure_ascii=False,indent=1)[:4000]); th=j["threads"][j.get("faultingThread",0)]; imgs=j["usedImages"]; [print(fr.get("symbol","?"), imgs[fr["imageIndex"]].get("name","?")) for fr in th["frames"][:25]]' "$f" || true
+      # 한글 이름이 원인인지 비교: 같은 코드를 영문 이름으로 빌드해 실행
+      - uses: actions/checkout@v4
+        if: always()
+        with:
+          path: src
+      - uses: actions/setup-node@v4
+        if: always()
+        with:
+          node-version: 22
+      - name: ASCII-name build and launch
+        if: always()
+        working-directory: src
+        run: |
+          npm ci
+          npx electron-builder --mac dir --arm64 --publish never -c.productName=AIUsageWidget
+          rm -rf ~/.ai-usage-widget
+          APP="$(ls -d dist/mac-arm64/*.app)"; echo "app: $APP"
+          "$APP/Contents/MacOS/AIUsageWidget" > ../ascii.log 2>&1 & sleep 25
+          pgrep -fl AIUsageWidget || echo "NOT RUNNING (ascii)"
+          echo "--- widget.log"; cat ~/.ai-usage-widget/widget.log || echo "no widget.log"
+          screencapture -x ../screen-ascii.png || true
+          grep -vE "^\s*$" ../ascii.log | tail -20
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: smoke
           path: |
             screen-open.png
+            screen-ascii.png
             run.log
+            ascii.log
