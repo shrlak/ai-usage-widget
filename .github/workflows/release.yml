@@ -1,5 +1,5 @@
-# package.json 의 version 을 올려서 main 에 푸시하면 Mac(.dmg) · Windows(.exe) 설치 파일을 만들어
-# GitHub Releases 의 v<version> 에 올림. 같은 버전으로 다시 돌면 파일을 새로 덮어씀
+# package.json 의 version 을 올려서 main 에 푸시하면 Mac(.dmg) · Windows(.exe) 설치 파일을 만들고,
+# 실제 Mac · Windows 에서 켜서 위젯이 뜨는 걸 확인한 뒤에만 GitHub Releases 의 v<version> 에 올림
 name: Release
 
 on:
@@ -17,25 +17,7 @@ permissions:
   contents: write
 
 jobs:
-  # Release 를 먼저 한 번만 만들어 둠 (빌드 여러 개가 동시에 만들다 부딪히지 않게)
-  release:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Create release if missing
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          TAG="v$(node -p "require('./package.json').version")"
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "$TAG already exists"
-          else
-            gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" \
-              --notes "설치 파일: Mac 은 .dmg (Apple 칩은 arm64, Intel 은 x64), Windows 는 .exe"
-          fi
-
   build:
-    needs: release
     strategy:
       fail-fast: false
       matrix:
@@ -48,10 +30,39 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Build and publish
-        run: npx electron-builder --publish always
+      - name: Build
+        run: npx electron-builder --publish never
+
+      # 켜자마자 꺼지는 앱을 올리지 않게: 실제로 켜서 widget.log 에 'shown' 이 남는지 확인
+      - name: Launch check (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          for app in dist/mac*/*.app; do codesign -dv "$app"; done
+          BIN="dist/mac-arm64/AI Usage Widget.app/Contents/MacOS/AI Usage Widget"
+          "$BIN" > run.log 2>&1 & sleep 25
+          cat ~/.ai-usage-widget/widget.log || true
+          tail -20 run.log
+          grep -q ' shown ' ~/.ai-usage-widget/widget.log
+          pkill -f "AI Usage Widget" || true
+      - name: Launch check (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Start-Process "dist/win-unpacked/AI Usage Widget.exe"
+          Start-Sleep 25
+          $log = "$env:USERPROFILE\.ai-usage-widget\widget.log"
+          Get-Content $log
+          Stop-Process -Name "AI Usage Widget" -Force -ErrorAction SilentlyContinue
+          if (-not (Select-String -Path $log -Pattern ' shown ' -Quiet)) { exit 1 }
+
+      - name: Upload to release
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Check macOS signature
-        if: runner.os == 'macOS'
-        run: for app in dist/mac*/*.app; do codesign -dv "$app"; done
+        run: |
+          TAG="v$(node -p "require('./package.json').version")"
+          gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" \
+            --notes "설치 파일: Mac 은 .dmg (Apple 칩은 arm64, Intel 은 x64), Windows 는 .exe" \
+            || gh release view "$TAG" > /dev/null # 다른 빌드가 먼저 만들었으면 그걸 씀
+          shopt -s nullglob
+          gh release upload "$TAG" --clobber dist/*.dmg dist/*.exe dist/*.blockmap dist/latest*.yml
