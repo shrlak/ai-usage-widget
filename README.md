@@ -94,7 +94,7 @@ npm start          # 바로 실행
 npm run dist       # 내 컴퓨터용 설치 파일을 dist/ 에 만들기
 ```
 
-`v1.0.1` 처럼 `v` 로 시작하는 태그를 올리면 GitHub Actions(`.github/workflows/release.yml`)가 Mac · Windows 설치 파일을 만들어 Releases에 올려요.
+`package.json` 의 `version` 을 올려서(예: `1.0.1`) `main` 에 푸시하면 GitHub Actions(`.github/workflows/release.yml`)가 Mac · Windows 설치 파일을 만들어 Releases의 `v1.0.1` 에 올려요.
 
 | 파일 | 역할 |
 |---|---|

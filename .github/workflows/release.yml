@@ -1,10 +1,17 @@
-# 태그(v1.0.0 등)를 올리면 Mac(.dmg) · Windows(.exe) 설치 파일을 만들어 GitHub Releases 에 올림
+# package.json 의 version 을 올려서 main 에 푸시하면 Mac(.dmg) · Windows(.exe) 설치 파일을 만들어
+# GitHub Releases 의 v<version> 에 올림 (Release 와 태그는 electron-builder 가 만듦)
 name: Release
 
 on:
   push:
+    branches: [main]
+    paths: ['package.json', '.github/workflows/release.yml']
     tags: ['v*']
   workflow_dispatch:
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 permissions:
   contents: write
