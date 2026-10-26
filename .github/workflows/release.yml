@@ -5,7 +5,7 @@ name: Release
 on:
   push:
     branches: [main]
-    paths: ['package.json', '.github/workflows/release.yml']
+    paths: ['package.json']
     tags: ['v*']
   workflow_dispatch:
 
@@ -20,6 +20,7 @@ jobs:
   build:
     strategy:
       fail-fast: false
+      max-parallel: 1 # 둘이 동시에 Release 를 만들다 부딪히지 않게 차례로
       matrix:
         os: [macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
