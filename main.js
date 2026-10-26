@@ -1,17 +1,19 @@
 // AI 사용량 위젯 — 항상 맨 위에 떠 있는 작은 창
 // 창 어디든 끌어서 옮길 수 있고, 옮긴 자리는 기억함. 트레이(메뉴 막대) 아이콘이나 ⋯ 버튼으로 설정.
 'use strict';
-const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, globalShortcut, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, globalShortcut, dialog, net } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { createCollector } = require('./collector');
 const claudeLink = require('./claude-link');
+const { ClaudeApi } = require('./claude-api');
 
 const WIDTH = 300;
 const SHORTCUT = 'CommandOrControl+Alt+U';
-const DEFAULTS = { x: null, y: null, collapsed: false, showSessions: true, onTop: true, opacity: 1 };
+const DEFAULTS = { x: null, y: null, collapsed: false, showSessions: true, onTop: true, opacity: 1, claudeApi: true, loginSet: false };
 
 let win = null, tray = null, prefs = { ...DEFAULTS }, collector = null;
+const claudeApi = new ClaudeApi((url, opts) => net.fetch(url, opts)); // 시스템 프록시 설정을 따름
 let linkState = 'none', linkCheckedAt = 0, moveTimer = null;
 
 // ───────── 설정 저장 ─────────
@@ -82,8 +84,10 @@ function push() {
   try { collector.refresh(); } catch (e) { console.error(e); }
   const now = Date.now();
   if (now - linkCheckedAt > 5000) { linkCheckedAt = now; const s = claudeLink.state(); if (s !== linkState) { linkState = s; buildTray(); } }
-  const snap = collector.snapshot();
+  claudeApi.poll().then(() => { }, () => { }); // 몇 분에 한 번만 실제로 물어봄
+  const snap = collector.snapshot(claudeApi.limits(now));
   snap.claude.link = linkState;
+  snap.claude.api = claudeApi.enabled ? claudeApi.status : 'off';
   snap.prefs = { collapsed: prefs.collapsed, showSessions: prefs.showSessions };
   win.webContents.send('snapshot', snap);
   if (tray) tray.setToolTip(tooltipOf(snap));
@@ -134,9 +138,12 @@ function menuTemplate() {
     })) },
     { label: '위치 처음대로 (오른쪽 위)', click: () => { if (win) { const p = defaultPos(); win.setPosition(p.x, p.y); } } },
     { type: 'separator' },
+    { label: 'Claude 한도를 계정에서 자동 확인', type: 'checkbox', checked: prefs.claudeApi,
+      click: (i) => { claudeApi.enabled = i.checked; setPref('claudeApi', i.checked); if (i.checked) claudeApi.poll(true).then(push, push); } },
+    { label: 'Claude 한도 지금 다시 확인', enabled: prefs.claudeApi, click: () => claudeApi.poll(true).then(push, push) },
     linkState === 'ours'
-      ? { label: 'Claude 한도 연결 해제', click: unlinkClaude }
-      : { label: 'Claude 한도 연결하기…', click: linkClaude },
+      ? { label: 'Claude 상태줄 연결 해제', click: unlinkClaude }
+      : { label: 'Claude 상태줄로도 받기…', click: linkClaude },
     { label: '로그인할 때 자동 실행', type: 'checkbox', enabled: canLogin,
       checked: canLogin && app.getLoginItemSettings().openAtLogin,
       click: (i) => { app.setLoginItemSettings({ openAtLogin: i.checked }); buildTray(); } },
@@ -176,6 +183,11 @@ else {
   app.whenReady().then(() => {
     if (process.platform === 'darwin' && app.dock) app.dock.hide(); // Dock 아이콘 없이, 전체 화면 위에도 뜨게
     loadPrefs();
+    claudeApi.enabled = prefs.claudeApi;
+    if (app.isPackaged && !prefs.loginSet) { // 설치한 앱을 처음 켜면 로그인할 때 자동으로 뜨게 (메뉴에서 끌 수 있음)
+      try { app.setLoginItemSettings({ openAtLogin: true }); } catch { }
+      prefs.loginSet = true; savePrefs();
+    }
     collector = createCollector();
     claudeLink.refresh();
     linkState = claudeLink.state();

@@ -1,0 +1,32 @@
+# 태그(v1.0.0 등)를 올리면 Mac(.dmg) · Windows(.exe) 설치 파일을 만들어 GitHub Releases 에 올림
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Build and publish
+        run: npx electron-builder --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check macOS signature
+        if: runner.os == 'macOS'
+        run: for app in dist/mac*/*.app; do codesign -dv "$app"; done

@@ -63,10 +63,21 @@ function agentBlock(name, a, now, extra) {
 }
 
 function claudeExtra(c) {
-  if (c.link === 'ours') return `<div class="note">연결됐어요. Claude Code 를 다시 켜고 한 번 대화하면 남은 한도가 나와요</div>`;
-  if (c.link === 'broken') return `<div class="note">~/.claude/settings.json 을 읽을 수 없어요</div>`;
-  return `<div class="note">남은 한도를 보려면 Claude Code 상태줄 연결이 필요해요</div>
-    <button class="link-btn" data-act="link-claude">연결하기</button>`;
+  // 계정에서 자동으로 받는 게 기본. 안 될 때만 이유와 다른 방법(상태줄)을 보여줌
+  const why = {
+    idle: '남은 한도를 확인하는 중…',
+    nocred: 'Claude Code 에 로그인돼 있으면 자동으로 보여요 (데스크톱 앱이나 터미널에서 한 번 로그인)',
+    expired: '로그인이 만료됐어요. Claude Code 를 한 번 열면 다시 보여요',
+    denied: '키체인 접근을 허용해야 보여요 · 메뉴 → 지금 다시 확인',
+    error: '지금은 한도를 가져오지 못했어요. 잠시 후 다시 시도해요',
+  }[c.api];
+  let html = why ? `<div class="note">${why}</div>` : '';
+  if (c.link === 'ours') html += `<div class="note">상태줄 연결됨 · Claude Code 로 대화하면 갱신돼요</div>`;
+  else if (c.api !== 'idle' && c.link !== 'noclaude' && c.link !== 'broken') {
+    if (!why) html += `<div class="note">남은 한도를 보려면 Claude Code 상태줄 연결이 필요해요</div>`;
+    html += `<button class="link-btn" data-act="link-claude">상태줄로 받기</button>`;
+  }
+  return html;
 }
 
 function sessionRows(list, now) {

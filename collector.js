@@ -162,9 +162,11 @@ class Claude {
     const windows = [win(u.five_hour, '5시간'), win(u.seven_day, '주간')].filter(Boolean);
     return { limits: windows.length ? { windows, at: u.at || 0 } : null, perSession: u.sessions || {} };
   }
-  snapshot(now) {
+  snapshot(now, apiLimits) {
     const live = this.live();
-    const { limits, perSession } = this.limits();
+    const { limits: slLimits, perSession } = this.limits();
+    // 계정에 직접 물어본 값(claude-api.js)과 상태줄이 적어 둔 값 중 더 최근 것
+    const limits = apiLimits && (!slLimits || apiLimits.at >= slLimits.at) ? apiLimits : slLimits;
     const list = [];
     for (const S of this.sessions.values()) {
       const isLive = live ? live.has(S.id) : false;
@@ -366,9 +368,9 @@ function createCollector() {
       if (now - lastScan > 5000) { lastScan = now; claude.scan(); codex.scan(); }
       claude.tick(); codex.tick();
     },
-    snapshot() {
+    snapshot(claudeApiLimits) {
       const now = Date.now();
-      const c = claude.snapshot(now), x = codex.snapshot(now);
+      const c = claude.snapshot(now, claudeApiLimits), x = codex.snapshot(now);
       const order = { ask: 0, work: 1, wait: 2, idle: 3 };
       const sessions = c.sessions.concat(x.sessions).sort((a, b) => (order[a.status] - order[b.status]) || (b.lastAt - a.lastAt));
       delete c.sessions; delete x.sessions;
