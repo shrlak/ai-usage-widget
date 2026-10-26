@@ -1,0 +1,25 @@
+{
+  "name": "ai-usage-widget",
+  "productName": "AI 사용량",
+  "version": "1.0.0",
+  "description": "Claude Code 와 Codex 의 남은 한도·오늘 토큰·실행 중인 세션을 화면 맨 위에 띄워 두는 작은 위젯",
+  "main": "main.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "electron": "44.9.3",
+    "electron-builder": "26.17.0"
+  },
+  "build": {
+    "appId": "local.ai-usage-widget",
+    "productName": "AI 사용량",
+    "files": ["main.js", "preload.js", "collector.js", "claude-link.js", "statusline.js", "renderer/**", "assets/**"],
+    "mac": { "target": "dmg", "icon": "assets/icon.png", "category": "public.app-category.developer-tools", "extendInfo": { "LSUIElement": true } },
+    "win": { "target": "nsis", "icon": "assets/icon.png" },
+    "nsis": { "oneClick": true, "perMachine": false },
+    "linux": { "target": "AppImage", "icon": "assets/icon.png" }
+  }
+}

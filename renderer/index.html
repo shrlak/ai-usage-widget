@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+  <title>AI 사용량</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="root" class="card">
+    <header class="head">
+      <span class="brand"><span class="beacon" id="beacon"></span><span class="title">AI 사용량</span></span>
+      <span class="mini" id="mini"></span>
+      <span class="btns">
+        <button id="btn-collapse" title="작게 / 크게 보기">–</button>
+        <button id="btn-menu" title="메뉴">⋯</button>
+      </span>
+    </header>
+    <main id="body">
+      <section class="agent claude" id="claude"></section>
+      <section class="agent codex" id="codex"></section>
+      <section class="sessions" id="sessions"></section>
+    </main>
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
