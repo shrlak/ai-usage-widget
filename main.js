@@ -1,7 +1,7 @@
 // AI 사용량 위젯 — 항상 맨 위에 떠 있는 작은 창
 // 창 어디든 끌어서 옮길 수 있고, 옮긴 자리는 기억함. 트레이(메뉴 막대) 아이콘이나 ⋯ 버튼으로 설정.
 'use strict';
-const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, globalShortcut, dialog, net } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, Tray, Menu, nativeImage, globalShortcut, dialog, net, shell } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const { createCollector } = require('./collector');
@@ -10,11 +10,14 @@ const { ClaudeApi } = require('./claude-api');
 
 const WIDTH = 300;
 const SHORTCUT = 'CommandOrControl+Alt+U';
+const RELEASES_API = 'https://api.github.com/repos/shrlak/ai-usage-widget/releases/latest';
+const UPDATE_EVERY_MS = 6 * 3600e3;
 const DEFAULTS = { x: null, y: null, collapsed: false, showSessions: true, onTop: true, opacity: 1, claudeApi: true, loginSet: false };
 
 let win = null, tray = null, prefs = { ...DEFAULTS }, collector = null;
 const claudeApi = new ClaudeApi((url, opts) => net.fetch(url, opts)); // 시스템 프록시 설정을 따름
 let linkState = 'none', linkCheckedAt = 0, moveTimer = null;
+let update = null; // 새 버전이 있으면 { version, url }
 
 // ───────── 설정 저장 ─────────
 const prefsFile = () => path.join(app.getPath('userData'), 'widget-settings.json');
@@ -88,6 +91,7 @@ function push() {
   const snap = collector.snapshot(claudeApi.limits(now));
   snap.claude.link = linkState;
   snap.claude.api = claudeApi.enabled ? claudeApi.status : 'off';
+  snap.update = update;
   snap.prefs = { collapsed: prefs.collapsed, showSessions: prefs.showSessions };
   win.webContents.send('snapshot', snap);
   if (tray) tray.setToolTip(tooltipOf(snap));
@@ -122,6 +126,32 @@ function unlinkClaude() {
 }
 
 // ───────── 메뉴 (트레이 · ⋯ 버튼 공용) ─────────
+// ───────── 새 버전 알림 ─────────
+// GitHub Releases 의 최신 버전과 비교만 함. 받기를 누르면 다운로드 페이지를 브라우저로 엶
+const isNewer = (a, b) => {
+  const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+  return false;
+};
+async function checkUpdate(manual = false) {
+  try {
+    const res = await net.fetch(RELEASES_API, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'ai-usage-widget' } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const j = await res.json();
+    const v = String(j.tag_name || '').replace(/^v/, '');
+    const url = String(j.html_url || '');
+    update = /^\d+\.\d+\.\d+$/.test(v) && url.startsWith('https://github.com/') && isNewer(v, app.getVersion()) ? { version: v, url } : null;
+    if (manual) {
+      if (update) openUpdate();
+      else dialog.showMessageBox({ type: 'info', message: `최신 버전이에요 (v${app.getVersion()})` });
+    }
+  } catch (e) {
+    if (manual) dialog.showMessageBox({ type: 'warning', message: '업데이트를 확인하지 못했어요', detail: String(e.message || e) });
+  }
+  buildTray(); push();
+}
+function openUpdate() { if (update) shell.openExternal(update.url); }
+
 function setPref(k, v) { prefs[k] = v; savePrefs(); buildTray(); push(); }
 function menuTemplate() {
   const visible = !!(win && win.isVisible());
@@ -148,6 +178,9 @@ function menuTemplate() {
       checked: canLogin && app.getLoginItemSettings().openAtLogin,
       click: (i) => { app.setLoginItemSettings({ openAtLogin: i.checked }); buildTray(); } },
     { type: 'separator' },
+    update
+      ? { label: `새 버전 받기 (v${update.version})`, click: openUpdate }
+      : { label: `업데이트 확인 (지금 v${app.getVersion()})`, click: () => checkUpdate(true) },
     { label: '종료', role: 'quit' },
   ];
 }
@@ -174,6 +207,7 @@ ipcMain.on('action', (_e, name) => {
   if (name === 'toggle-collapse') setPref('collapsed', !prefs.collapsed);
   else if (name === 'menu') Menu.buildFromTemplate(menuTemplate()).popup({ window: win });
   else if (name === 'link-claude') linkClaude();
+  else if (name === 'open-update') openUpdate();
 });
 
 // ───────── 시작 ─────────
@@ -195,6 +229,8 @@ else {
     buildTray();
     try { globalShortcut.register(SHORTCUT, toggleVisible); } catch { }
     setInterval(push, 1000);
+    setTimeout(checkUpdate, 15e3);
+    setInterval(checkUpdate, UPDATE_EVERY_MS);
     screen.on('display-removed', () => { if (win) { const [x, y] = win.getPosition(); if (!onSomeScreen(x, y)) { const p = defaultPos(); win.setPosition(p.x, p.y); } } });
   });
   app.on('will-quit', () => globalShortcut.unregisterAll());

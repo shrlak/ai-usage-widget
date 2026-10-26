@@ -110,9 +110,13 @@ function mini(s) {
 function render(s) {
   document.body.classList.toggle('collapsed', !!s.prefs.collapsed);
   $('btn-collapse').textContent = s.prefs.collapsed ? '+' : '–';
+  $('btn-collapse').classList.toggle('upd', !!s.update); // 작게 볼 때 새 버전이 있으면 + 에 파란 점
+  $('btn-collapse').title = s.update ? `새 버전 v${s.update.version} · 크게 보기` : '작게 / 크게 보기';
   const asking = s.sessions.some(x => x.status === 'ask'), working = s.sessions.some(x => x.status === 'work');
   $('beacon').className = 'beacon' + (asking ? ' ask' : working ? ' on' : '');
   $('mini').innerHTML = mini(s);
+  $('update').innerHTML = s.update
+    ? `<span>새 버전 <b>v${esc(s.update.version)}</b> 이 나왔어요</span><button data-act="open-update">받기</button>` : '';
   if (!s.prefs.collapsed) {
     $('claude').innerHTML = agentBlock('Claude', s.claude, s.now, claudeExtra(s.claude));
     $('codex').innerHTML = agentBlock('Codex', s.codex, s.now);

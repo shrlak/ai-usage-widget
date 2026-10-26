@@ -47,6 +47,21 @@ button, .no-drag { -webkit-app-region: no-drag; }
 .collapsed .title, .collapsed main { display: none; }
 .collapsed .mini { display: flex; }
 
+.update:empty { display: none; }
+.update {
+  display: flex; align-items: center; gap: 6px; margin-top: 8px; padding: 5px 8px; border-radius: 8px;
+  background: rgba(122, 155, 216, 0.16); color: var(--text); font-size: 10.5px;
+}
+.update button {
+  margin-left: auto; border: 0; border-radius: 5px; padding: 2px 8px; cursor: pointer;
+  background: #7A9BD8; color: #111; font: inherit; font-weight: 600;
+}
+.collapsed .update { display: none; }
+.btns button { position: relative; }
+.collapsed .btns button.upd::after {
+  content: ''; position: absolute; top: 1px; right: 2px; width: 6px; height: 6px; border-radius: 50%; background: #7A9BD8;
+}
+
 .agent { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
 .agent-head { display: flex; align-items: baseline; gap: 6px; margin-bottom: 5px; }
 .agent-head .name { font-weight: 700; font-size: 12.5px; }
